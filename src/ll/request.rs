@@ -10,7 +10,6 @@ use std::{error, fmt, mem};
 
 use super::argument::ArgumentIterator;
 
-
 /// Error that may occur while reading and parsing a request from the kernel driver.
 #[derive(Debug)]
 pub enum RequestError {
@@ -27,16 +26,22 @@ pub enum RequestError {
 impl fmt::Display for RequestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RequestError::ShortReadHeader(len) => write!(f, "Short read of FUSE request header ({} < {})", len, mem::size_of::<fuse_in_header>()),
+            RequestError::ShortReadHeader(len) => write!(
+                f,
+                "Short read of FUSE request header ({} < {})",
+                len,
+                mem::size_of::<fuse_in_header>()
+            ),
             RequestError::UnknownOperation(opcode) => write!(f, "Unknown FUSE opcode ({})", opcode),
-            RequestError::ShortRead(len, total) => write!(f, "Short read of FUSE request ({} < {})", len, total),
+            RequestError::ShortRead(len, total) => {
+                write!(f, "Short read of FUSE request ({} < {})", len, total)
+            }
             RequestError::InsufficientData => write!(f, "Insufficient argument data"),
         }
     }
 }
 
 impl error::Error for RequestError {}
-
 
 /// Filesystem operation (and arguments) the kernel driver wants us to perform. The fields of each
 /// variant needs to match the actual arguments the kernel driver sends for the specific operation.
@@ -175,7 +180,6 @@ pub enum Operation {
     // FAllocate {
     //     arg: fuse_fallocate_in,
     // },
-
     #[cfg(target_os = "macos")]
     SetVolName {
         name: OsString,
@@ -188,11 +192,11 @@ pub enum Operation {
         oldname: OsString,
         newname: OsString,
     },
-
     // TODO: CUSE_INIT since ABI 7.12
     // CuseInit {
     //     arg: fuse_init_in,
     // },
+    Unknown {},
 }
 
 impl<'a> fmt::Display for Operation {
@@ -241,6 +245,8 @@ impl<'a> fmt::Display for Operation {
             Operation::GetXTimes => write!(f, "GETXTIMES"),
             #[cfg(target_os = "macos")]
             Operation::Exchange { arg, oldname, newname } => write!(f, "EXCHANGE olddir {:#018x}, oldname {:?}, newdir {:#018x}, newname {:?}, options {:#x}", arg.olddir, oldname, arg.newdir, newname, arg.options),
+
+            Operation::Unknown{} => write!(f, "UNKNOWN returning ENOSYS")
         }
     }
 }
@@ -252,9 +258,13 @@ impl Operation {
                 fuse_opcode::FUSE_LOOKUP => Operation::Lookup {
                     name: data.fetch_str()?.into(),
                 },
-                fuse_opcode::FUSE_FORGET => Operation::Forget { arg: *data.fetch()? },
+                fuse_opcode::FUSE_FORGET => Operation::Forget {
+                    arg: *data.fetch()?,
+                },
                 fuse_opcode::FUSE_GETATTR => Operation::GetAttr,
-                fuse_opcode::FUSE_SETATTR => Operation::SetAttr { arg: *data.fetch()? },
+                fuse_opcode::FUSE_SETATTR => Operation::SetAttr {
+                    arg: *data.fetch()?,
+                },
                 fuse_opcode::FUSE_READLINK => Operation::ReadLink,
                 fuse_opcode::FUSE_SYMLINK => Operation::SymLink {
                     name: data.fetch_str()?.into(),
@@ -283,15 +293,23 @@ impl Operation {
                     arg: *data.fetch()?,
                     name: data.fetch_str()?.into(),
                 },
-                fuse_opcode::FUSE_OPEN => Operation::Open { arg: *data.fetch()? },
-                fuse_opcode::FUSE_READ => Operation::Read { arg: *data.fetch()? },
+                fuse_opcode::FUSE_OPEN => Operation::Open {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_READ => Operation::Read {
+                    arg: *data.fetch()?,
+                },
                 fuse_opcode::FUSE_WRITE => Operation::Write {
                     arg: *data.fetch()?,
                     data: data.fetch_all().to_vec(),
                 },
                 fuse_opcode::FUSE_STATFS => Operation::StatFs,
-                fuse_opcode::FUSE_RELEASE => Operation::Release { arg: *data.fetch()? },
-                fuse_opcode::FUSE_FSYNC => Operation::FSync { arg: *data.fetch()? },
+                fuse_opcode::FUSE_RELEASE => Operation::Release {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_FSYNC => Operation::FSync {
+                    arg: *data.fetch()?,
+                },
                 fuse_opcode::FUSE_SETXATTR => Operation::SetXAttr {
                     arg: *data.fetch()?,
                     name: data.fetch_str()?.into(),
@@ -301,26 +319,52 @@ impl Operation {
                     arg: *data.fetch()?,
                     name: data.fetch_str()?.into(),
                 },
-                fuse_opcode::FUSE_LISTXATTR => Operation::ListXAttr { arg: *data.fetch()? },
+                fuse_opcode::FUSE_LISTXATTR => Operation::ListXAttr {
+                    arg: *data.fetch()?,
+                },
                 fuse_opcode::FUSE_REMOVEXATTR => Operation::RemoveXAttr {
                     name: data.fetch_str()?.into(),
                 },
-                fuse_opcode::FUSE_FLUSH => Operation::Flush { arg: *data.fetch()? },
-                fuse_opcode::FUSE_INIT => Operation::Init { arg: *data.fetch()? },
-                fuse_opcode::FUSE_OPENDIR => Operation::OpenDir { arg: *data.fetch()? },
-                fuse_opcode::FUSE_READDIR => Operation::ReadDir { arg: *data.fetch()? },
-                fuse_opcode::FUSE_RELEASEDIR => Operation::ReleaseDir { arg: *data.fetch()? },
-                fuse_opcode::FUSE_FSYNCDIR => Operation::FSyncDir { arg: *data.fetch()? },
-                fuse_opcode::FUSE_GETLK => Operation::GetLk { arg: *data.fetch()? },
-                fuse_opcode::FUSE_SETLK => Operation::SetLk { arg: *data.fetch()? },
-                fuse_opcode::FUSE_SETLKW => Operation::SetLkW { arg: *data.fetch()? },
-                fuse_opcode::FUSE_ACCESS => Operation::Access { arg: *data.fetch()? },
+                fuse_opcode::FUSE_FLUSH => Operation::Flush {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_INIT => Operation::Init {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_OPENDIR => Operation::OpenDir {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_READDIR => Operation::ReadDir {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_RELEASEDIR => Operation::ReleaseDir {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_FSYNCDIR => Operation::FSyncDir {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_GETLK => Operation::GetLk {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_SETLK => Operation::SetLk {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_SETLKW => Operation::SetLkW {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_ACCESS => Operation::Access {
+                    arg: *data.fetch()?,
+                },
                 fuse_opcode::FUSE_CREATE => Operation::Create {
                     arg: *data.fetch()?,
                     name: data.fetch_str()?.into(),
                 },
-                fuse_opcode::FUSE_INTERRUPT => Operation::Interrupt { arg: *data.fetch()? },
-                fuse_opcode::FUSE_BMAP => Operation::BMap { arg: *data.fetch()? },
+                fuse_opcode::FUSE_INTERRUPT => Operation::Interrupt {
+                    arg: *data.fetch()?,
+                },
+                fuse_opcode::FUSE_BMAP => Operation::BMap {
+                    arg: *data.fetch()?,
+                },
                 fuse_opcode::FUSE_DESTROY => Operation::Destroy,
 
                 #[cfg(target_os = "macos")]
@@ -335,11 +379,11 @@ impl Operation {
                     oldname: data.fetch_str()?.into(),
                     newname: data.fetch_str()?.into(),
                 },
+                fuse_opcode::FUSE_UNKNOWN => Operation::Unknown {},
             })
         }
     }
 }
-
 
 /// Low-level request of a filesystem operation the kernel driver wants to perform.
 #[derive(Debug)]
@@ -350,7 +394,11 @@ pub struct Request {
 
 impl fmt::Display for Request {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "FUSE({:3}) ino {:#018x}: {}", self.header.unique, self.header.nodeid, self.operation)
+        write!(
+            f,
+            "FUSE({:3}) ino {:#018x}: {}",
+            self.header.unique, self.header.nodeid, self.operation
+        )
     }
 }
 
@@ -422,7 +470,6 @@ impl Request {
         &self.operation
     }
 }
-
 
 #[cfg(test)]
 mod tests {
